@@ -1306,7 +1306,7 @@
       existing = document.createElement('button');
       existing.id = 'quixi-provider-pill';
       existing.className = 'draggable-none';
-      existing.title = 'Configure LLM Providers (OpenRouter, Custom, OpenAI OAuth, Grok OAuth, Anthropic, Local)';
+      existing.title = 'Configure LLM Providers (OpenRouter, DeepSeek)';
       existing.addEventListener('click', function(e) {
         e.preventDefault();
         e.stopPropagation();
@@ -1814,7 +1814,7 @@
         '<div class="qp-muted" style="font-size:12.5px;">' +
           (configuredCount > 0
             ? 'Active default: <strong>' + escapeHtml(state.activeProvider) + '</strong> · <code>' + escapeHtml(state.activeModel) + '</code>'
-            : 'Select a provider above (starting with OpenRouter, Custom Endpoint, OpenAI OAuth, Grok OAuth, or Anthropic) to continue.') +
+            : 'Select a provider above (OpenRouter or DeepSeek) to continue.') +
         '</div>' +
         '<div class="qp-btn-row" style="margin-top:0;">' +
           '<button id="qp-continue-btn" class="qp-btn primary draggable-none" style="padding:10px 22px;font-size:14px;">' +
