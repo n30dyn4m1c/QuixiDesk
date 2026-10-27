@@ -602,6 +602,14 @@ fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    // WebKitGTK under WSLg frequently paints a blank window with the DMA-BUF renderer; use shared memory instead.
+    #[cfg(target_os = "linux")]
+    if quixi_platform::HostEnv::is_wsl()
+        && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
+    {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     // Support multi-call invocation when QuixiDesk binary is invoked as a helper
     if let Some(arg1) = std::env::args().nth(1) {
         if arg1 == "--version" || arg1 == "-v" {
@@ -1263,7 +1271,7 @@ fn main() -> anyhow::Result<()> {
 
     let user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) QuixiDesk/3.6556.2 Claude/3.6556.2 Electron/44.9.3 Safari/605.1.15";
 
-    let webview = WebViewBuilder::new()
+    let webview_builder = WebViewBuilder::new()
         .with_user_agent(user_agent)
         .with_initialization_script(&init_script)
         .with_devtools(true)
@@ -1396,8 +1404,20 @@ fn main() -> anyhow::Result<()> {
                 b"<!doctype html><html><body></body></html>".to_vec(),
             )
         })
-        .with_url("app://localhost/")
-        .build(&window)?;
+        .with_url("app://localhost/");
+
+    // On Linux, wry must attach to tao's GTK container so it works under both X11 and Wayland (WSLg).
+    #[cfg(target_os = "linux")]
+    let webview = {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        let vbox = window
+            .default_vbox()
+            .ok_or_else(|| anyhow::anyhow!("tao window has no default GTK vbox"))?;
+        webview_builder.build_gtk(vbox)?
+    };
+    #[cfg(not(target_os = "linux"))]
+    let webview = webview_builder.build(&window)?;
 
     start_automation_http_server(proxy.clone());
 

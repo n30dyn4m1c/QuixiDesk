@@ -1055,7 +1055,7 @@ impl McpHost {
                     "id": id,
                     "displayName": display_name,
                     "installSource": "builtin",
-                    "path": format!("/Users/eric/.quixi/extensions/{}", id),
+                    "path": dirs::home_dir().unwrap_or_default().join(".quixi/extensions").join(id).to_string_lossy(),
                     "settings": {
                         "isEnabled": true,
                         "userConfig": {}

@@ -121,6 +121,28 @@ Optionally copy `dist/QuixiDesk.app` into `/Applications`:
 cp -R dist/QuixiDesk.app /Applications/
 ```
 
+### Linux & WSL2
+QuixiDesk runs on Linux via WebKitGTK, including WSL2 on Windows 11 with WSLg (no X server setup needed).
+
+1. Install the build dependencies and desktop helpers (Ubuntu/Debian):
+   ```bash
+   sudo apt install build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev \
+       libsoup-3.0-dev libjavascriptcoregtk-4.1-dev zenity wl-clipboard xclip xdg-utils
+   # WSL only: lets links open in your Windows browser
+   sudo apt install wslu
+   ```
+2. Install Rust: `curl https://sh.rustup.rs -sSf | sh`
+3. Run the app:
+   ```bash
+   cargo run --release -p quixi-app
+   ```
+
+Notes:
+- The default workspace folder is your home directory; override it with `QUIXI_WORKSPACE=/path/to/project`.
+- File and folder pickers use `zenity`. The clipboard uses `wl-copy`/`wl-paste` or `xclip`, falling back to the Windows clipboard under WSL.
+- Under WSL, URLs and folders open on the Windows side (`wslview`, else `explorer.exe`). `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set automatically to avoid a blank window on WSLg.
+- Computer Use's OS-level screenshot, mouse and keyboard tools are macOS-only. On Linux they act only on the QuixiDesk window through its in-app bridge.
+
 ---
 
 ## Workspace Architecture

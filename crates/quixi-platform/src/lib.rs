@@ -9,6 +9,115 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
+/// 0. HostEnv (cross-platform shims: WSL detection, default workspace, opening URLs/paths)
+pub struct HostEnv;
+
+impl HostEnv {
+    /// Returns true when running inside Windows Subsystem for Linux (WSL1/WSL2).
+    pub fn is_wsl() -> bool {
+        static IS_WSL: OnceLock<bool> = OnceLock::new();
+        *IS_WSL.get_or_init(|| {
+            cfg!(target_os = "linux")
+                && (std::env::var_os("WSL_DISTRO_NAME").is_some()
+                    || fs::read_to_string("/proc/sys/kernel/osrelease")
+                        .map(|s| s.to_lowercase().contains("microsoft"))
+                        .unwrap_or(false))
+        })
+    }
+
+    /// Default workspace folder: `$QUIXI_WORKSPACE` if set, otherwise the user's home directory.
+    pub fn default_workspace() -> &'static str {
+        static WORKSPACE: OnceLock<String> = OnceLock::new();
+        WORKSPACE.get_or_init(|| {
+            std::env::var("QUIXI_WORKSPACE")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| dirs::home_dir().map(|h| h.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "/".to_string())
+        })
+    }
+
+    /// Opens a URL or local path with the desktop's default handler:
+    /// `open` on macOS, the Windows host (`wslview` / `explorer.exe`) under WSL, `xdg-open` elsewhere.
+    pub fn open_external(target: &str) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            Command::new("/usr/bin/open").arg(target).spawn()?;
+            Ok(())
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            if Self::is_wsl() {
+                if Command::new("wslview").arg(target).spawn().is_ok() {
+                    return Ok(());
+                }
+                // explorer.exe needs a Windows path for local files; URLs pass through unchanged.
+                let win_target = if target.contains("://") {
+                    target.to_string()
+                } else {
+                    run_capture("wslpath", &["-w", target])
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_else(|| target.to_string())
+                };
+                Command::new("explorer.exe").arg(win_target).spawn()?;
+                return Ok(());
+            }
+            Command::new("xdg-open").arg(target).spawn()?;
+            Ok(())
+        }
+    }
+}
+
+/// Runs `program args...` and returns its stdout when it exits successfully.
+#[cfg(not(target_os = "macos"))]
+fn run_capture(program: &str, args: &[&str]) -> Option<String> {
+    let out = Command::new(program).args(args).output().ok()?;
+    if out.status.success() {
+        Some(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        None
+    }
+}
+
+/// Runs `program args...` with `input` piped to stdin; returns true when it exits successfully.
+#[cfg(not(target_os = "macos"))]
+fn run_with_stdin(program: &str, args: &[&str], input: &[u8]) -> bool {
+    use std::process::Stdio;
+    let Ok(mut child) = Command::new(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input);
+    }
+    child.wait().map(|s| s.success()).unwrap_or(false)
+}
+
+/// Shows a GTK file/folder chooser via `zenity`. Returns `None` if zenity is missing or the user cancels.
+#[cfg(not(target_os = "macos"))]
+fn zenity_select(title: &str, directory: bool, multiple: bool) -> Option<Vec<String>> {
+    let mut args = vec!["--file-selection".to_string(), format!("--title={}", title)];
+    if directory {
+        args.push("--directory".to_string());
+    }
+    if multiple {
+        args.push("--multiple".to_string());
+        args.push("--separator=\n".to_string());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = run_capture("zenity", &arg_refs)?;
+    Some(
+        out.lines()
+            .filter_map(ComputerUse::normalize_posix_path)
+            .collect(),
+    )
+}
+
 /// 1. SafeFsProvider (replaces `claude-native-binding.node` *Beneath / CC-2885)
 /// Enforces O_NOFOLLOW component-by-component traversal beneath a trusted root directory.
 pub struct SafeFs;
@@ -656,6 +765,26 @@ impl ComputerUse {
                 }
             }
         }
+        #[cfg(not(target_os = "macos"))]
+        {
+            if !Self::is_headless_test_env() {
+                if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                    if let Some(s) = run_capture("wl-paste", &["--no-newline"]) {
+                        return s;
+                    }
+                }
+                if let Some(s) = run_capture("xclip", &["-selection", "clipboard", "-o"]) {
+                    return s;
+                }
+                if HostEnv::is_wsl() {
+                    if let Some(s) =
+                        run_capture("powershell.exe", &["-NoProfile", "-Command", "Get-Clipboard"])
+                    {
+                        return s.trim_end_matches(['\r', '\n']).replace("\r\n", "\n");
+                    }
+                }
+            }
+        }
         cu_state()
             .lock()
             .map(|s| s.clipboard_fallback.clone())
@@ -677,6 +806,18 @@ impl ComputerUse {
                     let _ = stdin.write_all(text.as_bytes());
                 }
                 let _ = child.wait();
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            if !Self::is_headless_test_env() {
+                let bytes = text.as_bytes();
+                let copied = (std::env::var_os("WAYLAND_DISPLAY").is_some()
+                    && run_with_stdin("wl-copy", &[], bytes))
+                    || run_with_stdin("xclip", &["-selection", "clipboard"], bytes);
+                if !copied && HostEnv::is_wsl() {
+                    let _ = run_with_stdin("clip.exe", &[], bytes);
+                }
             }
         }
         Ok(())
@@ -729,8 +870,10 @@ impl ComputerUse {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = prompt;
-            Some("/Users/eric/quixi-desk".to_string())
+            let title = prompt
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("Choose a folder");
+            zenity_select(title, true, false).and_then(|v| v.into_iter().next())
         }
     }
 
@@ -766,8 +909,10 @@ impl ComputerUse {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = prompt;
-            vec!["/Users/eric/quixi-desk".to_string()]
+            let title = prompt
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("Select folders");
+            zenity_select(title, true, true).unwrap_or_default()
         }
     }
 
@@ -797,8 +942,10 @@ impl ComputerUse {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = prompt;
-            Some("/Users/eric/quixi-desk/Cargo.toml".to_string())
+            let title = prompt
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("Choose a file");
+            zenity_select(title, false, false).and_then(|v| v.into_iter().next())
         }
     }
 
@@ -834,8 +981,10 @@ impl ComputerUse {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = prompt;
-            vec!["/Users/eric/quixi-desk/Cargo.toml".to_string()]
+            let title = prompt
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("Select files");
+            zenity_select(title, false, true).unwrap_or_default()
         }
     }
 
