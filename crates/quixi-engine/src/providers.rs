@@ -1464,9 +1464,7 @@ impl ProviderManager {
                 .insert("xai".to_string(), session);
 
             if open_browser && std::env::var("QUIXI_E2E_TEST").is_err() {
-                let _ = std::process::Command::new("open")
-                    .arg(&verification_url)
-                    .spawn();
+                let _ = quixi_platform::HostEnv::open_external(&verification_url);
             }
 
             return json!({
@@ -1534,9 +1532,7 @@ impl ProviderManager {
             .insert("openai".to_string(), session);
 
         if open_browser && std::env::var("QUIXI_E2E_TEST").is_err() {
-            let _ = std::process::Command::new("open")
-                .arg(OPENAI_CODEX_DEVICE_VERIFICATION_URL)
-                .spawn();
+            let _ = quixi_platform::HostEnv::open_external(OPENAI_CODEX_DEVICE_VERIFICATION_URL);
         }
 
         json!({

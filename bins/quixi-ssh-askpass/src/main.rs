@@ -28,6 +28,19 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Ok(out) = Command::new("zenity")
+            .args(["--password", "--title=QuixiDesk SSH", &format!("--text={}", prompt)])
+            .output()
+        {
+            if out.status.success() {
+                print!("{}", String::from_utf8_lossy(&out.stdout));
+                return Ok(());
+            }
+        }
+    }
+
     let _ = prompt;
     std::process::exit(1);
 }

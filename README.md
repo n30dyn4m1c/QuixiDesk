@@ -14,7 +14,9 @@
 
 ---
 
-**QuixiDesk** is a fast, native Rust (`tao` + `wry` `WKWebView`) open-source alternative to **Claude Desktop**. It replaces the heavy Electron + Node.js runtime with a single-process native Rust workspace engine while preserving full feature parity—and extending it with **17 pluggable LLM providers**, **zero-configuration built-in MCPs (In-App Browser Use & Computer Use)**, a **unified task/chat workspace**, and **11 UI languages** out of the box.
+**QuixiDesk** is a fast, native Rust (`tao` + `wry`: `WKWebView` on macOS, WebKitGTK on Linux) open-source alternative to **Claude Desktop**. It replaces the heavy Electron + Node.js runtime with a single-process native Rust workspace engine while preserving full feature parity—and extending it with **17 pluggable LLM providers**, **zero-configuration built-in MCPs (In-App Browser Use & Computer Use)**, a **unified task/chat workspace**, and **11 UI languages** out of the box.
+
+> **About this fork:** [`n30dyn4m1c/QuixiDesk`](https://github.com/n30dyn4m1c/QuixiDesk) is a fork of [`QuixiAI/QuixiDesk`](https://github.com/QuixiAI/QuixiDesk) that adds **Linux and Windows (WSL2 + WSLg) support**: a WebKitGTK window, `xdg-open`/Windows-host link handling, `zenity` file pickers, Linux/Windows clipboard support, and no hardcoded macOS paths. See [Linux & WSL2](#linux--wsl2) for setup.
 
 ## Screenshots
 
@@ -84,13 +86,13 @@ QuixiDesk includes a built-in **Provider Manager** (`⌘⇧P` or click the top-r
 ## Installation & Build Instructions
 
 ### Prerequisites
-- **macOS 14.0 (Sonoma) or later** (Apple Silicon or Intel)
+- **macOS 14.0 (Sonoma) or later** (Apple Silicon or Intel), **Linux**, or **Windows 11 with WSL2** (see [Linux & WSL2](#linux--wsl2))
 - **Rust Toolchain** (`rustup`, `cargo` 1.80+)
-- **Xcode Command Line Tools** (`xcode-select --install`)
+- **Xcode Command Line Tools** (`xcode-select --install`) on macOS
 
 ### 1. Clone the Repository
 ```bash
-git clone git@github.com:QuixiAI/QuixiDesk.git
+git clone git@github.com:n30dyn4m1c/QuixiDesk.git
 cd QuixiDesk
 ```
 
@@ -100,7 +102,7 @@ Verify all 10 workspace crates (`quixi-proto`, `quixi-workspace`, `quixi-platfor
 cargo test --workspace
 ```
 
-### 3. Build & Package `QuixiDesk.app`
+### 3. Build & Package `QuixiDesk.app` (macOS)
 Build the optimized release binaries and package the macOS application bundle into `dist/QuixiDesk.app`:
 ```bash
 cargo build --release --workspace
@@ -112,7 +114,7 @@ Or run the desktop app directly in release mode:
 cargo run --release -p quixi-app
 ```
 
-### 4. Launch `QuixiDesk.app`
+### 4. Launch `QuixiDesk.app` (macOS)
 ```bash
 open dist/QuixiDesk.app
 ```
@@ -120,6 +122,28 @@ Optionally copy `dist/QuixiDesk.app` into `/Applications`:
 ```bash
 cp -R dist/QuixiDesk.app /Applications/
 ```
+
+### Linux & WSL2
+QuixiDesk runs on Linux via WebKitGTK, including WSL2 on Windows 11 with WSLg (no X server setup needed).
+
+1. Install the build dependencies and desktop helpers (Ubuntu/Debian):
+   ```bash
+   sudo apt install build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev \
+       libsoup-3.0-dev libjavascriptcoregtk-4.1-dev zenity wl-clipboard xclip xdg-utils
+   # WSL only: lets links open in your Windows browser
+   sudo apt install wslu
+   ```
+2. Install Rust: `curl https://sh.rustup.rs -sSf | sh`
+3. Run the app:
+   ```bash
+   cargo run --release -p quixi-app
+   ```
+
+Notes:
+- The default workspace folder is your home directory; override it with `QUIXI_WORKSPACE=/path/to/project`.
+- File and folder pickers use `zenity`. The clipboard uses `wl-copy`/`wl-paste` or `xclip`, falling back to the Windows clipboard under WSL.
+- Under WSL, URLs and folders open on the Windows side (`wslview`, else `explorer.exe`). `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set automatically to avoid a blank window on WSLg.
+- Computer Use's OS-level screenshot, mouse and keyboard tools are macOS-only. On Linux they act only on the QuixiDesk window through its in-app bridge.
 
 ---
 
