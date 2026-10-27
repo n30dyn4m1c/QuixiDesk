@@ -2933,25 +2933,24 @@ mod tests {
     fn test_connected_provider_model_selector_and_stream_events() {
         let (engine, router) = make_router();
 
-        // 1. Configure ONLY OpenAI Codex OAuth in memory (Anthropic is NOT connected)
+        // 1. Configure ONLY DeepSeek in memory (OpenRouter is NOT connected)
         {
             let mut st = engine.provider_manager.state.write();
-            st.active_provider = "openai".to_string();
-            st.active_model = "gpt-6.1-sol".to_string();
+            st.active_provider = "deepseek".to_string();
+            st.active_model = "deepseek-chat".to_string();
             for p in &mut st.providers {
                 p.oauth_access_token.clear();
                 p.api_key_raw.clear();
-                if p.id == "openai" {
+                if p.id == "deepseek" {
                     p.configured = true;
-                    p.auth_mode = "oauth".to_string();
-                    p.selected_model = "gpt-6.1-sol".to_string();
+                    p.selected_model = "deepseek-chat".to_string();
                 } else {
                     p.configured = false;
                 }
             }
         }
 
-        // 2. Verify /api/bootstrap only exposes connected OpenAI Codex models (no Sonnet / Anthropic models)
+        // 2. Verify /api/bootstrap only exposes connected DeepSeek models (no OpenRouter models)
         let (status, _ct, body) = engine.handle_api_request("GET", "/edge-api/bootstrap", b"");
         assert_eq!(status, 200);
         let boot: Value = serde_json::from_slice(&body).unwrap();
@@ -2967,11 +2966,10 @@ mod tests {
             .iter()
             .filter_map(|m| m["id"].as_str())
             .collect();
-        assert!(model_ids.contains(&"gpt-6.1-sol"));
-        assert!(model_ids.contains(&"gpt-6-astra"));
+        assert!(model_ids.contains(&"deepseek-chat"));
+        assert!(model_ids.contains(&"deepseek-reasoner"));
         assert!(!model_ids.contains(&"claude-sonnet-4-6"));
-        assert!(!model_ids.contains(&"claude-opus-4-7"));
-        assert!(!model_ids.contains(&"gpt-5.4")); // Platform API model excluded when auth_mode == oauth
+        assert!(!model_ids.contains(&"anthropic/claude-sonnet-4.6"));
 
         let cowork_state = boot["model_selector_state"]
             .as_array()
@@ -2979,15 +2977,15 @@ mod tests {
             .iter()
             .find(|s| s["id"] == "cowork")
             .unwrap();
-        assert_eq!(cowork_state["model"], "gpt-6.1-sol");
+        assert_eq!(cowork_state["model"], "deepseek-chat");
 
-        // 3. Also connect Grok (xAI) in memory and verify multi-provider dropdown includes both OpenAI + xAI
+        // 3. Also connect OpenRouter in memory and verify multi-provider dropdown includes both
         {
             let mut st = engine.provider_manager.state.write();
             for p in &mut st.providers {
-                if p.id == "xai" {
+                if p.id == "openrouter" {
                     p.configured = true;
-                    p.selected_model = "grok-4".to_string();
+                    p.selected_model = "x-ai/grok-4".to_string();
                 }
             }
         }
@@ -2999,8 +2997,8 @@ mod tests {
             .iter()
             .filter_map(|m| m["id"].as_str())
             .collect();
-        assert!(multi_ids.contains(&"gpt-6.1-sol"));
-        assert!(multi_ids.contains(&"grok-4"));
+        assert!(multi_ids.contains(&"deepseek-chat"));
+        assert!(multi_ids.contains(&"x-ai/grok-4"));
         assert!(!multi_ids.contains(&"claude-sonnet-4-6"));
 
         // 4. Verify `stream_event` emission sequence and model resolution during LocalAgentModeSessions
@@ -3028,8 +3026,8 @@ mod tests {
             .result
             .unwrap();
         let sid = start_res["sessionId"].as_str().unwrap().to_string();
-        // Even though caller requested claude-sonnet-4-6, session model resolved to connected gpt-6.1-sol!
-        assert_eq!(start_res["model"], "gpt-6.1-sol");
+        // Even though caller requested claude-sonnet-4-6, session model resolved to connected deepseek-chat!
+        assert_eq!(start_res["model"], "deepseek-chat");
 
         for _ in 0..50 {
             std::thread::sleep(std::time::Duration::from_millis(40));
@@ -3074,7 +3072,7 @@ mod tests {
                                     .to_string();
                                 assert_eq!(
                                     msg.pointer("/event/message/model").and_then(|v| v.as_str()),
-                                    Some("gpt-6.1-sol")
+                                    Some("deepseek-chat")
                                 );
                             }
                             "content_block_start" => saw_block_start = true,
@@ -3108,7 +3106,7 @@ mod tests {
         assert!(saw_message_stop, "Expected stream_event message_stop");
         assert!(!stream_msg_id.is_empty());
         assert_eq!(stream_msg_id, assistant_msg_id);
-        assert_eq!(assistant_model, "gpt-6.1-sol");
+        assert_eq!(assistant_model, "deepseek-chat");
 
         // Clean up test session file
         let _ = router.dispatch(&EipcInvokePayload {
